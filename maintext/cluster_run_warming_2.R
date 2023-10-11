@@ -1,11 +1,10 @@
 rm(list=ls())
-source("01_functions_cluster.R")
+source("functions.R")
 library(foreach)
 library(doMC)
 library(statmod)
 require(deSolve) ## for integrating ordinary differential equations
 require(tidyr) ## for efficient data manipulation & plotting
-#library(cowplot) ## for arranging plots in a grid
 library(dplyr)
 #library(readr)
 library(beepr)
@@ -48,7 +47,7 @@ fact<-expand.grid(Temperature=seq(12,45,0.5),
                   h2=c(0,0.4),
                   gamma=1.5,
                   var=c("high","low"),
-                  `web` = webfiles[40:86],
+                  `web` = webfiles[1:86],
                   `replicates`=1+(1:1)*100) 
 
 
@@ -105,10 +104,10 @@ output<-foreach(r = 1:nrow(fact))%dopar%{
   
   ic<-c(na,np,muA,muP) ## initial conditions coerced into a vector
   
-  tmax <- 1e3## time to integrate equations fors
+  tmax <- 1e4## time to integrate equations fors
   
   out<-cluster_run( params = params,ic = ic,tmax = tmax)
   
 }
 
-save(output, file ="cluster_warming_2.RData")
+#save(output, file ="cluster_warming.RData")

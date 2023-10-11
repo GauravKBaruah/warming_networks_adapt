@@ -1,8 +1,7 @@
 rm(list=ls())
-source("01_functions_cluster.R")
+source("functions.R")
 library(statmod)
-#require(deSolve) ## for integrating ordinary differential equations
-require(tidyr) ## for efficient data manipulation & plotting
+require(tidyr) ## for efficient data plotting
 library(cowplot) ## for arranging plots in a grid
 library(dplyr)
 library(readr)
@@ -10,47 +9,123 @@ library(beepr)
 library(viridis)
 library(ggdist)
 library(dplyr)
-#library(readr)
 library(beepr)
 library(viridis)
 library(moments)
 library(ggplot2)
-#theme_set(theme_classic()) 
-load("Network_data.RData")
 
+
+#functions used for analysis of the results
+#gaussian quadrature approximation used to numerically determine the integrals.
+gausquad.animals_jac<-function(m,sigma,w,h,np,na,mut.strength,points,mat,degree.animal, vec_na,vec_np){
+  
+  
+  temp2<-dat2<-jac1<-x2<-x3<-array(dim=c(points))
+  if(mat == 0){
+    return(list(G= 0, B = 0, J=0))
+  }
+  else if(mat == 1){
+    #nodes oir points in the abscissa where the integral will be evaluated numerically
+    
+    z1<-gauss.quad.prob(points, dist = "normal", mu=m$ma, sigma =sigma$sa)$nodes #z'
+    z2<-gauss.quad.prob(points, dist = "normal", mu=m$mp, sigma =sigma$sp)$nodes #z''
+    
+    #weights of the gaussian distribution given by mean trait value mu_i and its variance \sigma_i
+    w1<-gauss.quad.prob(points, dist = "normal", 
+                        mu=m$ma,sigma =sigma$sa)$weights #pi(z')
+    w2<-gauss.quad.prob(points, dist = "normal", 
+                        mu=m$mp,sigma =sigma$sp)$weights #pj(z'')
+    
+    
+    #for the pairwise model however there are only two species interacting and hence i and j
+    #or in other words the integral goes over z and z'
+    for (i in 1: points){
+      
+      
+      f <-  exp(-(z1[i]- z2)^2/w^2) # + 2*alpha*(sign(z1[i] - z2))*(1- exp(-(z1[i]-z2)^2/w^2)) + sign(alpha))
+      
+      temp2[i]<- sum(np*(mut.strength/degree.animal)*f/(1+h*np*(mut.strength/degree.animal)*f)*w2*w1[i])
+      
+      jac1[i] <- sum(na*(mut.strength/degree.animal)*f/(1+h*sum( np)*(mut.strength/degree.animal)*f)^2*w2*w1[i])
+      
+      
+      dat2[i]<- sum( ((z1[i]-m$ma)*f*(mut.strength/degree.animal)*np/(1+h*np*(mut.strength/degree.animal)*f) )*w2*w1[i])
+      
+      
+      
+    }
+    G = sum(temp2)
+    B = sum(dat2) 
+    J=sum(jac1)
+    
+    
+    
+    return(list(G= G, B = B, J=J))
+  }
+}
+
+#gaussian quadrature approximation used to numerically determine the integrals.
+gausquad.plants_jac<-function(m,sigma,w,h,np,na,mut.strength,points,mat,degree.plant, vec_na,vec_np){
+  
+  temp2<-dat2<-x3<-x4<-jac2<-array(dim=c(points))
+  
+  if(mat == 0){
+    
+    return(list(G= 0, B = 0, J=0))
+    
+  }
+  else if (mat==1){
+    #nodes oir points in the abscissa where the integral will be evaluated numerically
+    z1<-gauss.quad.prob(points, dist = "normal", mu=m$mp, sigma =sigma$sp)$nodes #z'
+    z2<-gauss.quad.prob(points, dist = "normal", mu=m$ma, sigma =sigma$sa)$nodes #z''
+    
+    #weights of the gaussian distribution given by mean trait value mu_i and its variance \sigma_i
+    
+    w1<-gauss.quad.prob(points, dist = "normal", 
+                        mu=m$mp,sigma =sigma$sp)$weights #pi(z')
+    w2<-gauss.quad.prob(points, dist = "normal", 
+                        mu=m$ma,sigma =sigma$sa)$weights #pj(z'')
+    
+    
+    #for the pairwise model however there are only two species interacting and hence i and j
+    #or in other words the integral goes over z and z'
+    for (i in 1: points){
+      
+      f <-  exp(-(z1[i]- z2)^2/w^2) # + 2*alpha*(sign(z1[i] - z2))*(1- exp(-(z1[i]-z2)^2/w^2)) + sign(alpha))
+      
+      temp2[i]<- sum(na*(mut.strength/degree.plant)*f/(1+h*na*(mut.strength/degree.plant)*f)*w2*w1[i])
+      
+      jac2[i]<- sum(np*(mut.strength/degree.plant)*f/(1+h*sum(na)*(mut.strength/degree.plant)*f)^2*w2*w1[i])
+      
+      
+      dat2[i]<- sum( ((z1[i]-m$mp)*f*(mut.strength/degree.plant)*na/(1+h*na*(mut.strength/degree.plant)*f) )*w2*w1[i])
+      
+      # x4[i]<-sum(h*w2*exp(-(z1[i]-z2)^2/w^2))
+    }
+    
+    G= sum(temp2)
+    B = sum(dat2)
+    J=sum(jac2)
+  } 
+  
+  
+  
+  return(list(G= G, 
+              B = B, J=J))
+  
+  
+}
+
+
+
+#loading the network data from the simulations
+load("Network_data.RData")
 mydir = 'datasets_1'
 myfiles = list.files(path=mydir, pattern="*.csv", full.names=TRUE)
-#myfiles<-myfile
 newfiles<-myfiles[1:154]
+net_dat$individual_variation<- plyr::revalue(net_dat$individual_variation ,c("high"= "high variation",
+                                                                             "low" = "low variation"))
 
-# load("cluster_warming_1.RData")
-# 
-#  net_dat<-sp_dat<-NULL
-#  for(i in 1:10720){
-#    print(i)
-#  net_dat<-rbind(net_dat, output[[i]]$output_network_data)  
-#  sp_dat<-rbind(sp_dat,output[[i]]$species_level_data)  
-#  }
-#   
-# # 
- # load("cluster_warming_3.RData")
-# # 
-net_dat<-sp_dat1<-NULL
-  for(i in 1:9348){
-    print(i)
-    net_dat<-rbind(net_dat, output[[i]]$output_network_data)  
-   sp_dat1<-rbind(sp_dat1,output[[i]]$species_level_data)  
-  }
-# 
-# str(net_dat)
-# 
-# net_dat<-rbind(net_dat,net_dat1)
-# 
-# spdat<-rbind(sp_dat,sp_dat1)
-# save(spdat, file ="Species_data.RData")
-# 
-# save(net_dat, file ="Network_data.RData")
-#temperature vs biomass and richness
 
 (r0<-net_dat %>% ggplot(aes(x= Temperature, y =biomass, color=factor(h2)))+
   geom_point(size =4, alpha =0.1)+
@@ -71,8 +146,6 @@ net_dat %>% ggplot(aes(x= Temperature, y =trait_matching, color=factor(h2)))+
   ylab("Richness")+
   labs(color="heritability")
 
-net_dat$individual_variation<- plyr::revalue(net_dat$individual_variation ,c("high"= "high variation",
-                                                                             "low" = "low variation"))
 #temperature at collapse analysis 
 webfiles<-unique(net_dat$web)
 
@@ -253,74 +326,8 @@ grid_arrange_shared_legend(r7,r8, nrow = 1,ncol = 2)
   labs(color="heritability"))
 
 
-
-(n2<-fact_1 %>% ggplot(aes(y= (trait_lag), x = network_size, color = factor(h2)))+
-  geom_point(size=5, alpha=0.8)+
-  theme_bw()+
-  scale_color_brewer(palette="Dark2")+
-  xlab("connectance")+
-  ylab("Network trait lag at collapse")+
-    labs(color="heritability")+
-  geom_smooth(method = "lm", formula = y~x, se=F)+
-  facet_wrap(.~individual_variation)  )
-
-
-ggpubr::ggarrange(n1,n2, nrow=2,ncol = 1,labels = c("A","B"))
-fact_1 %>% ggplot(aes(y=trait_lag, x = nestedness, color = factor(h2)))+
-  geom_point(size=5)+
-  theme_bw()+
-  scale_color_brewer(palette="Dark2")+
-  xlab("nestedness (NODF)")+
-  ylab("Network trait lag")+
-  geom_smooth(method = "lm", formula = y~x, se=F)+
-  facet_wrap(.~individual_variation)  
-
-
-fact_1 %>% ggplot(aes(x =factor(h2), y = (trait_lag), color=individual_variation))+
-  geom_boxplot(outlier.colour  =NA)+
-  theme_bw()+
-  xlab("Heritability")+
-  ylab("Mean network trait-lag at collapse")+
-  ylim(c(-2,5))+
-  scale_color_brewer(palette="Dark2")+
-  labs(color="Trait variation")+
-  geom_jitter(aes(x =factor(h2), y = trait_lag,color=individual_variation),
-              position = position_dodge2(0.8), size =3, alpha =0.25)
-
-
-
-
-(r9<-fact_1 %>% ggplot(aes(y=trait_matching, x = network_size, color = factor(h2)))+
-    geom_point(size=5)+
-    theme_bw()+
-    scale_color_brewer(palette="Dark2")+
-    xlab("Nestedness(NODF)")+
-    ggtitle("A")+
-    labs(col="heritability")+
-    ylab("Temperature at collapse")+
-    geom_smooth(method = "lm", formula = y~x, se=F)+
-    facet_wrap(.~individual_variation))  
-
-
-
-
-
-#######
+####### FOR jacobian stability analysis#################
 load("Species_data.RData")
-str(sp_dat1)
-
-sp_dat1$Degree<-as.numeric(as.character(sp_dat1$Degree))
-sp_dat1$Species<-as.numeric(as.character(sp_dat1$Species))
-sp_dat1$Nestedness<-as.numeric(as.character(sp_dat1$Nestedness))
-sp_dat1$Connectance<-as.numeric(as.character(sp_dat1$Connectance))
-sp_dat1$Individual_variation<-as.factor(as.character(sp_dat1$Individual_variation))
-sp_dat1$Network_size<-as.numeric(as.character(sp_dat1$Network_size))
-sp_dat1$mutualism_strength<-as.numeric(as.character(sp_dat1$mutualism_strength))
-sp_dat1$density<-as.numeric(as.character(sp_dat1$density))
-sp_dat1$trait_values<-as.numeric(as.character(sp_dat1$trait_values))
-sp_dat1$Temperature<-as.numeric(as.character(sp_dat1$Temperature))
-str(sp_dat1)
-
 
 spdat$Degree<-as.numeric(as.character(spdat$Degree))
 spdat$Species<-as.numeric(as.character(spdat$Species))
@@ -334,17 +341,7 @@ spdat$trait_values<-as.numeric(as.character(spdat$trait_values))
 spdat$Temperature<-as.numeric(as.character(spdat$Temperature))
 str(spdat)
 
-# for(i in 421868:nrow(spdat)){
-#   
-#   
-#   spdat$web[i]<- as.character(fact_1$webfiles[which(fact_1$connectance==spdat$Connectance[i])][1])
-#   
-#   print(i)
-#   
-#   
-#   
-# }
-# 
+
 #spdat<- sp_dat1
 mydir = 'datasets_1'
 myfiles = list.files(path=mydir, pattern="*.csv", full.names=TRUE)
@@ -565,105 +562,3 @@ fact %>% filter(Temperature <30) %>%
 
 
 
-
-
-#gaussian quadrature approximation used to numerically determine the integrals.
-gausquad.animals_jac<-function(m,sigma,w,h,np,na,mut.strength,points,mat,degree.animal, vec_na,vec_np){
-  
-  
-  temp2<-dat2<-jac1<-x2<-x3<-array(dim=c(points))
-  if(mat == 0){
-    return(list(G= 0, B = 0, J=0))
-  }
-  else if(mat == 1){
-    #nodes oir points in the abscissa where the integral will be evaluated numerically
-    
-    z1<-gauss.quad.prob(points, dist = "normal", mu=m$ma, sigma =sigma$sa)$nodes #z'
-    z2<-gauss.quad.prob(points, dist = "normal", mu=m$mp, sigma =sigma$sp)$nodes #z''
-    
-    #weights of the gaussian distribution given by mean trait value mu_i and its variance \sigma_i
-    w1<-gauss.quad.prob(points, dist = "normal", 
-                        mu=m$ma,sigma =sigma$sa)$weights #pi(z')
-    w2<-gauss.quad.prob(points, dist = "normal", 
-                        mu=m$mp,sigma =sigma$sp)$weights #pj(z'')
-    
-    
-    #for the pairwise model however there are only two species interacting and hence i and j
-    #or in other words the integral goes over z and z'
-    for (i in 1: points){
-      
-      
-      f <-  exp(-(z1[i]- z2)^2/w^2) # + 2*alpha*(sign(z1[i] - z2))*(1- exp(-(z1[i]-z2)^2/w^2)) + sign(alpha))
-      
-      temp2[i]<- sum(np*(mut.strength/degree.animal)*f/(1+h*np*(mut.strength/degree.animal)*f)*w2*w1[i])
-      
-      jac1[i] <- sum(na*(mut.strength/degree.animal)*f/(1+h*sum( np)*(mut.strength/degree.animal)*f)^2*w2*w1[i])
-      
-      
-      dat2[i]<- sum( ((z1[i]-m$ma)*f*(mut.strength/degree.animal)*np/(1+h*np*(mut.strength/degree.animal)*f) )*w2*w1[i])
-      
-      
-      
-    }
-    G = sum(temp2)
-    B = sum(dat2) 
-    J=sum(jac1)
-    
-    
-    
-    return(list(G= G, B = B, J=J))
-  }
-}
-
-#gaussian quadrature approximation used to numerically determine the integrals.
-gausquad.plants_jac<-function(m,sigma,w,h,np,na,mut.strength,points,mat,degree.plant, vec_na,vec_np){
-  
-  temp2<-dat2<-x3<-x4<-jac2<-array(dim=c(points))
-  
-  if(mat == 0){
-    
-    return(list(G= 0, B = 0, J=0))
-    
-  }
-  else if (mat==1){
-    #nodes oir points in the abscissa where the integral will be evaluated numerically
-    z1<-gauss.quad.prob(points, dist = "normal", mu=m$mp, sigma =sigma$sp)$nodes #z'
-    z2<-gauss.quad.prob(points, dist = "normal", mu=m$ma, sigma =sigma$sa)$nodes #z''
-    
-    #weights of the gaussian distribution given by mean trait value mu_i and its variance \sigma_i
-    
-    w1<-gauss.quad.prob(points, dist = "normal", 
-                        mu=m$mp,sigma =sigma$sp)$weights #pi(z')
-    w2<-gauss.quad.prob(points, dist = "normal", 
-                        mu=m$ma,sigma =sigma$sa)$weights #pj(z'')
-    
-    
-    #for the pairwise model however there are only two species interacting and hence i and j
-    #or in other words the integral goes over z and z'
-    for (i in 1: points){
-      
-      f <-  exp(-(z1[i]- z2)^2/w^2) # + 2*alpha*(sign(z1[i] - z2))*(1- exp(-(z1[i]-z2)^2/w^2)) + sign(alpha))
-      
-      temp2[i]<- sum(na*(mut.strength/degree.plant)*f/(1+h*na*(mut.strength/degree.plant)*f)*w2*w1[i])
-      
-      jac2[i]<- sum(np*(mut.strength/degree.plant)*f/(1+h*sum(na)*(mut.strength/degree.plant)*f)^2*w2*w1[i])
-      
-      
-      dat2[i]<- sum( ((z1[i]-m$mp)*f*(mut.strength/degree.plant)*na/(1+h*na*(mut.strength/degree.plant)*f) )*w2*w1[i])
-      
-      # x4[i]<-sum(h*w2*exp(-(z1[i]-z2)^2/w^2))
-    }
-    
-    G= sum(temp2)
-    B = sum(dat2)
-    J=sum(jac2)
-  } 
-  
-  
-  
-  return(list(G= G, 
-              B = B, J=J))
-  
-  
-}
-  
