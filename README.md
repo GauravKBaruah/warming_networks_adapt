@@ -1,7 +1,7 @@
 # Repository for the paper titled: "Stability, resilience, and eco-evolutionary feedbacks of mutualistic networks to rising temperature"
 Authors: Gaurav Baruah, Tim Lakaemper
 
-#The codes and scripts are prepared by Gaurav Baruah and Tim Lakaemper.
+#The codes and scripts are prepared by Gaurav Baruah and Tim Lakaemper for the Journal Of Animal Ecology paper.
 
 #Data and Rscripts:
 
